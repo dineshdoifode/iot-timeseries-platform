@@ -159,6 +159,24 @@ make up
 | pgAdmin | http://localhost:5050 |
 | MQTT broker | localhost:1883 |
 
+## Frontend
+
+A React frontend scaffold is available in the `frontend/` directory. It provides:
+
+- login and JWT-based API access
+- fleet statistics
+- device inventory display
+
+To run the frontend locally:
+
+```bash
+cd frontend
+npm.cmd install
+npm.cmd run dev
+```
+
+Then open the Vite URL shown in the terminal.
+
 ## Sample device simulator
 
 ```bash
