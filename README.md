@@ -1,61 +1,154 @@
 # IoT Time-Series Platform
 
-A complete Docker-based IoT backend stack for MQTT ingestion, TimescaleDB
-storage, alarm evaluation, and observability.
+A full-stack IoT backend for secure MQTT ingestion, time-series storage, alarm evaluation, and real-time observability.
 
-This repository has been updated to reflect the latest working configuration
-and code fixes for async database integration and test compatibility.
+This project is built as a Docker Compose deployment and demonstrates a complete IoT ingestion pipeline with:
+- authenticated MQTT ingestion via Mosquitto
+- TimescaleDB time-series storage
+- FastAPI REST API with JWT and API key authentication
+- asynchronous workers for MQTT ingestion and alarm evaluation
+- Prometheus metrics, Grafana dashboards, and Loki logging
+- Nginx reverse proxy and TLS-ready routing
 
-## Latest changes made
+## What this project does
 
-- `app/database/session.py`
-  - switched the async SQLAlchemy engine to `poolclass=NullPool`
-  - fixed `asyncpg` event-loop reuse failures during ASGI test execution
-- `pytest.ini`
-  - removed invalid `anyio_backend`
-  - kept `asyncio_default_fixture_loop_scope = session`
-- `docker-compose.yml`
-  - removed the obsolete top-level `version` key
-- Timestamp handling was updated to timezone-aware UTC in:
-  - `app/api/auth.py`
-  - `app/api/alarms.py`
-  - `app/api/devices.py`
-  - `app/repositories/*`
-  - `app/workers/mqtt_worker.py`
-- Verified test success: `docker compose run --rm -v "<repo>:/srv" api pytest -q` → `22 passed`
+This platform receives telemetry and device status from MQTT-connected devices, stores the data in TimescaleDB, and exposes REST endpoints for fleet management, history queries, alarm rules, and statistics.
 
-## What this project contains
+It solves the following operational needs:
+- secure device communication through MQTT authentication and ACLs
+- high-volume telemetry persistence in a time-series database
+- automatic device registration and status tracking
+- rule-based alarm detection and notification
+- observability for system health, metrics, logs, and dashboards
 
-- Mosquitto MQTT broker with password+ACL authentication
-- FastAPI REST API with JWT auth, RBAC, and API keys
-- Async SQLAlchemy + `asyncpg` talking to TimescaleDB
-- MQTT ingestion worker
-- Alarm evaluation worker
-- Prometheus, Grafana, Loki, and Promtail for observability
-- Nginx TLS termination
-- Integration tests for auth, devices, and alarms
+## Architecture
 
-## Quickstart
+The core architecture is:
 
-Create the environment file:
+- `Mosquitto` broker: authenticates MQTT clients and enforces ACLs
+- `mqtt-worker`: subscribes to `phy/+/telemetry` and `phy/+/status`, validates payloads, and writes telemetry/status to the database
+- `TimescaleDB`: stores time-series telemetry and device history with optimized query support
+- `FastAPI` service: exposes protected REST APIs for devices, telemetry, alarms, and fleet stats
+- `alarm-worker`: periodically evaluates alarm rules against recent telemetry and generates alerts
+- `Prometheus`, `Grafana`, and `Loki`: provide metrics, dashboards, and log analysis
+- `Nginx`: handles routing and TLS termination
+
+### High-level flow
+
+1. Devices publish MQTT messages to `phy/{device_id}/telemetry` and `phy/{device_id}/status`
+2. `mqtt-worker` consumes messages, writes raw audit rows, and persists processed telemetry/status rows
+3. `TimescaleDB` stores device data in specialized time-series tables
+4. The API serves device inventory, telemetry history, alarm management, and fleet statistics
+5. `alarm-worker` evaluates rules and fires alarms when conditions are met
+6. Metrics and logs are scraped and displayed in Grafana and Loki
+
+## Features
+
+- authenticated MQTT ingestion with a shared service account
+- raw audit storage of incoming MQTT messages
+- flexible telemetry parsing with metric names, units, quality, and raw payload
+- device status history and online/offline tracking
+- alarm rules for thresholds, device offline, battery low, and timeout conditions
+- manual alarm resolve support
+- role-based API access for admin, operator, and viewer users
+- JWT authentication plus API key issuance/revocation
+- fleet-level and per-device statistics endpoints
+- Prometheus metrics for worker health, MQTT throughput, alarm counts, and connected devices
+- Grafana provisioning for dashboards and data sources
+- Loki logging for troubleshooting
+
+## API overview
+
+The REST API is available under `/api/v1`.
+
+### Authentication
+
+- `POST /api/v1/auth/login`
+  - Login with username/password
+  - Returns a JWT access token
+- `POST /api/v1/auth/register`
+  - Admin-only endpoint to create new users
+- `GET /api/v1/auth/me`
+  - Returns the current authenticated user
+- `POST /api/v1/auth/api-keys`
+  - Admin-only create an API key
+- `DELETE /api/v1/auth/api-keys/{key_id}`
+  - Admin-only revoke an API key
+
+### Devices
+
+- `POST /api/v1/devices`
+  - Register a new device
+- `GET /api/v1/devices`
+  - List devices
+- `GET /api/v1/devices/{device_id}`
+  - Get device details
+- `PATCH /api/v1/devices/{device_id}`
+  - Update a device
+- `DELETE /api/v1/devices/{device_id}`
+  - Delete a device
+- `GET /api/v1/devices/{device_id}/telemetry`
+  - Query device telemetry by metric, time range, and limit
+
+### Commands
+
+- `POST /api/v1/devices/{device_id}/commands`
+  - Publish a command payload to a device via MQTT
+
+### Alarms
+
+- `POST /api/v1/alarms/rules`
+  - Create an alarm rule
+- `GET /api/v1/alarms/rules`
+  - List alarm rules
+- `GET /api/v1/alarms/rules/{rule_id}`
+  - Get a single alarm rule
+- `PATCH /api/v1/alarms/rules/{rule_id}`
+  - Update an alarm rule
+- `DELETE /api/v1/alarms/rules/{rule_id}`
+  - Delete an alarm rule
+- `GET /api/v1/alarms`
+  - List alarms (optional `device_id`, `active_only`)
+- `POST /api/v1/alarms/{alarm_id}/resolve`
+  - Manually resolve an alarm instance
+
+### Stats
+
+- `GET /api/v1/stats/fleet`
+  - Fleet overview including device counts, online devices, active alarms, and telemetry rate
+- `GET /api/v1/stats/devices/{device_id}`
+  - Per-device metric summary and active alarm count
+
+## API docs
+
+Interactive documentation is available at:
+
+- http://localhost:8000/docs
+- http://localhost:8000/redoc
+
+## Getting started
+
+1. Copy the environment file:
 
 ```bash
 cp .env.example .env
 ```
 
-Edit `.env` with your credentials and run:
+2. Update `.env` with your credentials and secrets.
+
+3. Start the stack:
 
 ```bash
 docker compose up -d --build
 ```
 
-If you have `make`:
+Or use Make:
 
 ```bash
 make up
 ```
 
-### Service URLs
+### Default service URLs
 
 | Service | URL |
 |---|---|
@@ -66,58 +159,72 @@ make up
 | pgAdmin | http://localhost:5050 |
 | MQTT broker | localhost:1883 |
 
-## Environment values
-
-Use these working values in `.env`:
-
-```dotenv
-POSTGRES_USER=iot_admin
-POSTGRES_PASSWORD=change_me_strong_password
-POSTGRES_DB=iot_platform
-POSTGRES_HOST=timescaledb
-POSTGRES_PORT=5432
-DATABASE_URL=postgresql+asyncpg://iot_admin:change_me_strong_password@timescaledb:5432/iot_platform
-
-MQTT_BROKER_HOST=mosquitto
-MQTT_BROKER_PORT=1883
-MQTT_USERNAME=iot_service
-MQTT_PASSWORD=change_me_mqtt_password
-MQTT_CLIENT_ID=iot-worker
-MQTT_TELEMETRY_TOPIC=phy/+/telemetry
-MQTT_STATUS_TOPIC=phy/+/status
-MQTT_KEEPALIVE=60
-MQTT_RECONNECT_MIN_DELAY=1
-MQTT_RECONNECT_MAX_DELAY=30
-
-API_HOST=0.0.0.0
-API_PORT=8000
-API_SECRET_KEY=change_me_jwt_secret
-API_ACCESS_TOKEN_EXPIRE_MINUTES=60
-ENVIRONMENT=development
-LOG_LEVEL=INFO
-
-PGADMIN_DEFAULT_EMAIL=admin@example.com
-PGADMIN_DEFAULT_PASSWORD=change_me_pgadmin_password
-
-GRAFANA_ADMIN_USER=admin
-GRAFANA_ADMIN_PASSWORD=change_me_grafana_password
-
-RATE_LIMIT_PER_MINUTE=120
-DEVICE_OFFLINE_CHECK_INTERVAL_SECONDS=30
-```
-
-## Authentication
-
-A seeded admin user is created on first DB initialization:
-
-```text
-username: admin
-password: ChangeMe123!
-```
-
-Log in:
+## Sample device simulator
 
 ```bash
+pip install paho-mqtt
+python scripts/simulate_device.py --device-id esp32-hvac-001 --username iot_service --password change_me_mqtt_password --count 10
+```
+
+## End-to-end example
+
+1. Start the Docker stack.
+2. Publish telemetry to `phy/{device_id}/telemetry`.
+3. Publish status to `phy/{device_id}/status`.
+4. Create alarms or query telemetry via the REST API.
+
+### Example login
+
+```bash
+curl -X POST http://localhost:8000/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"ChangeMe123!"}'
+```
+
+### Example telemetry query
+
+```bash
+TOKEN=<token>
+
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/v1/devices | jq
+curl -H "Authorization: Bearer $TOKEN" \
+  "http://localhost:8000/api/v1/devices/esp32-hvac-001/telemetry?metric=temperature&limit=10" | jq
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/v1/stats/fleet | jq
+```
+
+## Database schema
+
+Core tables include:
+- `devices`
+- `telemetry`
+- `device_status`
+- `mqtt_messages`
+- `alarms`
+- `alarm_rules`
+- `users`
+- `api_keys`
+
+## Observability
+
+- Prometheus scrapes the API and worker metrics
+- Grafana displays dashboards and panels
+- Loki collects container logs for troubleshooting
+- Nginx routes traffic and enables TLS as needed
+
+## Testing
+
+Run the test suite from the API container:
+
+```bash
+docker compose run --rm -v "$(pwd):/srv" api pytest -q
+```
+
+## Notes
+
+- Do not commit `.env`.
+- Use strong secrets for `API_SECRET_KEY`, MQTT credentials, and DB passwords.
+- The platform is designed as a secure IoT demo/prototype with role-based API access, alarm rules, and time-series ingestion.
+
 curl -X POST http://localhost:8000/api/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username":"admin","password":"ChangeMe123!"}'
