@@ -1,0 +1,13 @@
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+nginx/certs/*.crt
+nginx/certs/*.key
+mosquitto/config/passwd
+mosquitto/data/*
+mosquitto/log/*
+!mosquitto/data/.gitkeep
+!mosquitto/log/.gitkeep
+venv/
+.venv/

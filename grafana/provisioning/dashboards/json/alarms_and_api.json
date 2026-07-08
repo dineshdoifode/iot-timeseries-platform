@@ -1,0 +1,72 @@
+{
+  "title": "IoT Platform - Alarms & API Health",
+  "uid": "iot-alarms-api",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": { "from": "now-24h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Alarms Fired (last 24h)",
+      "type": "table",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "TimescaleDB" },
+      "targets": [
+        {
+          "rawSql": "SELECT triggered_at, device_id, rule_name, severity, message, is_active FROM alarms WHERE triggered_at >= now() - interval '24 hours' ORDER BY triggered_at DESC LIMIT 200;",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Alarms by Severity (active)",
+      "type": "piechart",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 10 },
+      "datasource": { "type": "postgres", "uid": "TimescaleDB" },
+      "targets": [
+        {
+          "rawSql": "SELECT severity, count(*) AS count FROM alarms WHERE is_active = true GROUP BY severity;",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "API Request Latency (p95, by path)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 16, "x": 8, "y": 10 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(api_request_latency_seconds_bucket[5m])) by (le, path))",
+          "legendFormat": "{{path}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "MQTT Processing Errors / sec",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 18 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        { "expr": "rate(mqtt_processing_errors_total[5m])", "legendFormat": "{{topic_type}}" }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Unprocessed / DLQ MQTT Messages",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 18 },
+      "datasource": { "type": "postgres", "uid": "TimescaleDB" },
+      "targets": [
+        {
+          "rawSql": "SELECT count(*) AS unprocessed FROM mqtt_messages WHERE processed = false AND time >= now() - interval '24 hours';",
+          "format": "table"
+        }
+      ]
+    }
+  ]
+}
